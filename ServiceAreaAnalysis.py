@@ -60,7 +60,7 @@ if DSARevised_Field not in [f.name for f in arcpy.ListFields(ZCTAs)]:
     arcpy.AddField_management(ZCTAs,DSARevised_Field,"TEXT")#add revised field to ZCTA table for creating a crosswalk
 ZCTAFieldList = [f.name for f in arcpy.ListFields(ZCTAs)] #create list of from ZCTA fields
 
-OriginalSA = arcpy.Sort_management(OriginalSA,"Temp_shapeFileSorted",[[LOC_Field,"ASCENDING"]])#sort by LOC field
+arcpy.Sort_management(OriginalSA,"Temp_shapeFileSorted",[[LOC_Field,"ASCENDING"]])#sort by LOC field
 
 arcpy.SetProgressorLabel("Creating 'DSA_Revised' field that will be used for reassignment.")
 
