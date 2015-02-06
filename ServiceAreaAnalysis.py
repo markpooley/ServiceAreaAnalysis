@@ -77,6 +77,7 @@ with arcpy.da.UpdateCursor(OriginalSA,[DSA_Field,DSARevised_Field,LOC_Field],whe
         row[1] = row[0] #Populate DSA_Revised field with DSAs that are above the user specified threshold
         cursor.updateRow(row)
         Assigned_List.append(row[0])
+        arcpy.AddMessage(row)
 
 
 #udpate ZCTAs for crosswalk as well.
@@ -124,7 +125,7 @@ for i in range(0,len(DSA_List)):
     #Variables for the loop
     #-------------------------------------------------------------------------------------------
     currentDSA = DSA_List[i] #current DSA variable
-    whereClause = DSA_Field+ " = '"+ str(currentDSA) + "'" #selection cluase
+    whereClause = DSA_Field + " = '"+ str(currentDSA) + "'" #selection cluase
     DSA_RecClause = DSARec_Field + " = " + str(currentDSA) #where current DSA was recipient
     DSA_ProvClause = DSAProv_Field + " = " + str(currentDSA) #where current DSA was a Provider
     whereNotClause = DSA_Field + " <> " + "'" + currentDSA + "'" #select those not in question
