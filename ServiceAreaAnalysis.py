@@ -6,7 +6,10 @@
 # Link          : http://www.ppc.uiowa.edu
 # Date          : 2015-02-02 16:40:29
 # Version       : $1.1$
-# Description   : Description needed.
+# Description   : Takes Service Areas and aggregates those below a user defined threshold. Those
+# falling below the threshold are aggregated in no particular order. Assignment order isn't important
+# since forward and backward assignments are check for. Once aggregated, instances of # "islands"
+# (Service areas bounded entirely by another service area) are checked for and rectified.
 #-------------------------------------------------------------------------------------------------
 
 ###################################################################################################
@@ -32,8 +35,6 @@ IowaBorder = arcpy.GetParameterAsText(8)
 ZCTAs = arcpy.GetParameterAsText(9)
 env.workspace = arcpy.GetParameterAsText(10)
 OutputName = arcpy.GetParameterAsText(11)
-#CrosswalkOutput = arcpy.GetParameterAsText(12)
-#CrosswalkTable = arcpy.GetParameterAsText(13)
 OutputLocation = env.workspace
 
 ###################################################################################################
@@ -60,7 +61,7 @@ if DSARevised_Field not in [f.name for f in arcpy.ListFields(ZCTAs)]:
     arcpy.AddField_management(ZCTAs,DSARevised_Field,"TEXT")#add revised field to ZCTA table for creating a crosswalk
 ZCTAFieldList = [f.name for f in arcpy.ListFields(ZCTAs)] #create list of from ZCTA fields
 
-arcpy.Sort_management(OriginalSA,"Temp_shapeFileSorted",[[LOC_Field,"ASCENDING"]])#sort by LOC field
+#arcpy.Sort_management(OriginalSA,"Temp_shapeFileSorted",[[LOC_Field,"ASCENDING"]])#sort by LOC field
 
 arcpy.SetProgressorLabel("Creating 'DSA_Revised' field that will be used for reassignment.")
 
@@ -77,8 +78,6 @@ with arcpy.da.UpdateCursor(OriginalSA,[DSA_Field,DSARevised_Field,LOC_Field],whe
         row[1] = row[0] #Populate DSA_Revised field with DSAs that are above the user specified threshold
         cursor.updateRow(row)
         Assigned_List.append(row[0])
-        arcpy.AddMessage(row)
-
 
 #udpate ZCTAs for crosswalk as well.
 with arcpy.da.UpdateCursor(ZCTAs,[DSA_Field,DSARevised_Field]) as cursor:
@@ -129,7 +128,7 @@ for i in range(0,len(DSA_List)):
     DSA_RecClause = DSARec_Field + " = " + str(currentDSA) #where current DSA was recipient
     DSA_ProvClause = DSAProv_Field + " = " + str(currentDSA) #where current DSA was a Provider
     whereNotClause = DSA_Field + " <> " + "'" + currentDSA + "'" #select those not in question
-    Adj_DSAs = [] #adjacent DSAS to the current one
+    Adj_DSAs = [] #list to be populated with adjacent DSAs to the current one
     ProvDict = {} #dictionary of adjacent providers and visits occuring
     RecDict = {} #dictionary of care going to current DSA from adjacent DSAs
     FinalDict = {} #dictionary of additions where the best relationship will be found
@@ -148,7 +147,7 @@ for i in range(0,len(DSA_List)):
 
     #-------------------------------------------------------------------------------------------
     #Look in dyad table where recipient is the current DSA. Self assignment won't happen since the current
-    #DSA is not in the adjacent list. Build two dictionarys, one where adjacent DSAs were providers
+    #DSA is not in the adjacent list. Build two dictionarys, one where adjacent DSAs are providers
     #and another where adjacent DSAs were recipients. Go through both dictionarys and aggregate visits
     #occuring between the two and find the max number of visits
     #-------------------------------------------------------------------------------------------
@@ -215,7 +214,7 @@ arcpy.AddMessage("Checking for DSAs that were assigned to a Service Area that wa
 #Check for forward assignment errors. That is, check that DSAs weren't assigned to another DSA
 #that was later reassigned
 ####################################################################################################
-arcpy.SetProgressor('step','Checking for Service Areas that were assigned Service areas that were later reassigned...',0,len(AssignedDict),1)
+arcpy.SetProgressor('step','Checking for Service Areas that were assigned to Service areas that were later reassigned...',0,len(AssignedDict),1)
 
 for key,value in AssignedDict.iteritems():
     if value in AssignedDict.keys(): #look for value in keys - meaning that current key has been assigned to a DSA that was later reassigned
@@ -225,7 +224,7 @@ for key,value in AssignedDict.iteritems():
 
         arcpy.SetProgressorLabel("{0} assignment corrected to {1}".format(AssignedDict[key],AssignedDict[value]))
 
-        #update Service Areas and ZTAs
+        #update Service Areas and ZCTAs
         with arcpy.da.UpdateCursor(OriginalSA,DSARevised_Field,SelectionClause) as cursor:
             for row in cursor:
                 row[0] = ReAssignment
@@ -241,19 +240,14 @@ for key,value in AssignedDict.iteritems():
         pass
 
 arcpy.ResetProgressor()
-#Clear selections to export the layer
+
+####################################################################################################
+#Clear selections and dissolve based on "Assigned_To" field
+####################################################################################################
 arcpy.SelectLayerByAttribute_management(FeatureLayer,"Clear_Selection")
 
-#arcpy.AddMessage("Exporting feature layer to shapefile...")
-##Save layer as a shapfile in a user defined location
-#copyFeatures = arcpy.CopyFeatures_management(FeatureLayer,"Temp_FeatureOutput","#","0","0","0")
-##The following inputs are layers or table views: "OutputFile1"
-
 arcpy.AddMessage("Dissolving current DSA reassignment...")
-#Dissolve output of DSA Reassignment. This is needed to
-#TempDissolve = arcpy.Dissolve_management(copyFeatures,"Temp_Dissolve",DSARevised_Field,"#","MULTI_PART","DISSOLVE_LINES")
 
-#dissolve the newly created feature class by the "Assigned_To" field
 TempDissolve = arcpy.Dissolve_management(OriginalSA,"Temp_DSADissolve",DSARevised_Field,"","MULTI_PART","DISSOLVE_LINES")
 
 ####################################################################################################
@@ -263,9 +257,7 @@ TempDissolve = arcpy.Dissolve_management(OriginalSA,"Temp_DSADissolve",DSARevise
 arcpy.SetProgressor("step","Determining what DSAs touch the state border...",0,2,1)
 arcpy.AddMessage("Looking for island DSAs...")
 
-#FeatureCount = int(arcpy.GetCount_management(TempDissolve).getOutput(0)) #Get count of features for progressor tool
 FeatureLayer = arcpy.MakeFeatureLayer_management(TempDissolve,"DSAFeatureLayer") #Make a feature layer so selections can be done
-# Replace a layer/table view name with a path to a dataset (which can be a layer file) or create the layer/table view within the script
 
 #Select Features touching the State Border then switch selection to get only those not touching the border.
 BorderSelection = arcpy.SelectLayerByLocation_management(FeatureLayer,"WITHIN_A_DISTANCE",IowaBorder,"1 Miles","NEW_SELECTION")
@@ -274,7 +266,7 @@ BorderSelection = arcpy.SelectLayerByLocation_management(FeatureLayer,"WITHIN_A_
 arcpy.SetProgressorLabel("Creating list of DSAs that don't touch the state boundary...")
 arcpy.SetProgressorPosition()
 
-DSAsToCheck = [] #list that will containe DSAs that don't touch border
+DSAsToCheck = [] #list that will contain DSAs that don't touch border
 with arcpy.da.SearchCursor(BorderSelection,DSARevised_Field) as cursor:
     for row in cursor:
         DSAsToCheck.append(row[0])
@@ -298,6 +290,10 @@ for i in range(len(DSAsToCheck)):
 
     arcpy.SetProgressorLabel("{0} does not touch boundary. Checking if DSA is an island".format(currentDSA))
 
+    #-------------------------------------------------------------------------------------------
+    #Select the current DSA, then all those with a boundary touching it.
+    #look into doing this with a neighbor table...
+    #-------------------------------------------------------------------------------------------
     selection = arcpy.SelectLayerByAttribute_management(FeatureLayer, "NEW_SELECTION", whereClause) #select current DSA
     Adjacent_Selection = arcpy.SelectLayerByLocation_management(FeatureLayer,"BOUNDARY_TOUCHES",selection,"#","NEW_SELECTION") #select features adjacent to the current selection
 
@@ -338,7 +334,6 @@ arcpy.AddMessage("{0} DSAs were found to be islands and reassigned.".format(len(
 
 ####################################################################################################
 #clean up data and export final outputs
-#
 ####################################################################################################
 #Clear selections to export the layer
 arcpy.SelectLayerByAttribute_management(FeatureLayer,"Clear_Selection")
@@ -347,25 +342,12 @@ arcpy.SelectLayerByAttribute_management(FeatureLayer,"Clear_Selection")
 arcpy.AddMessage("Dissolving into new service areas without islands...")
 FinalOutput_Dissolve =  arcpy.Dissolve_management(OriginalSA,OutputName,DSARevised_Field,"#","MULTI_PART","DISSOLVE_LINES")
 
-#export ZCTA crosswalk table
-#arcpy.AddMessage("Exporting ZCTA Crosswalk to table...")
-#TempLayer = arcpy.MakeFeatureLayer_management(DSA_ZCTA_Join,"TempLayer")
-#arcpy.TableToTable_conversion(TempLayer,OutputLocation,"ZipCrosswalk_Table")
-#
-##ensure Excel output table has appropriate file extension
-#if ".xls" not in str(CrosswalkTable):
-#    CrosswalkTable = CrosswalkTable + ".xls"
-#arcpy.TableToExcel_conversion("ZipCrosswalk_Table", CrosswalkTable, "NAME","CODE")
-
 
 #Delete Temporary files created during the processing
-"""arcpy.AddMessage("Removing Temporary files...")
-TempFeatures = arcpy.ListFeatureClasses()
-TempList = []
-for feature in TempFeatures:
-    if "Temp" in feature:
-        arcpy.Delete_management(feature)
-"""
+arcpy.AddMessage("Removing Temporary files...")
+arcpy.Delete_management(TempDissolve)
 
 arcpy.AddMessage("DSA reassignment Complete!")
+arcpy.AddMessage("Final output name: {0}".format(OutputName))
+arcpy.AddMessage('Final ouput Location: {0}'.format(os.path.realpath(OutputLocation)))
 
